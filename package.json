@@ -1,0 +1,15 @@
+{
+  "name": "goblins-playground",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "author": "Diana Fernanda Belle <garbados@gmail.com>",
+  "license": "ISC",
+  "description": "Goblins web experiments",
+  "scripts": {
+    "start": "serve www"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
