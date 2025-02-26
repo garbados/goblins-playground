@@ -25,7 +25,7 @@ const DDOC = {
     archive: {
       map: function archive (doc) {
         if (doc.type === 'guestbook-entry') {
-          const rawDate = new Date(doc['created-at'])
+          const rawDate = new Date(doc.createdAt)
           const rawDatetime = rawDate.toISOString()
           dateparts = rawDatetime.split('T')
           date = dateparts[0].split('-')
@@ -114,6 +114,13 @@ const groupDocsByTags = async (db, options = {}) =>
 
 // VAT OBJECTS -- THE RIGHTS
 
+// 0. fn = (bcom, ...options) => (...args) => bcom(fn(bcom, ...options), result)
+// 1. instantiate with vat.do(() => goblins.spawn(fn, ...options))
+// 1a. this returns fnCap
+// 2. invoke with await vat.doPromise(() => fnCap.send(...args))
+// 2a. this returns the result of calling fn(...args)
+// 2b. the vats do not need to be the same. use sturdyrefs to cross machines.
+
 const addToGuestbook = (become, db) => 
   (content, tags) => 
     become(addToGuestbook(become, db), saveEntry(db, content, tags))
@@ -140,29 +147,31 @@ const readGuestbookArchiveTags = (become, db) =>
 
 // TEMPLATES -- THE GARMENTS
 
-const showEntry = ({ text, createdAt }, { editbuttonid, deletebuttonid }) => [
+const showEntry = ({ content, tags, createdAt, updatedAt }, { editbuttonid, deletebuttonid }) => [
   'section',
-  ['article', text],
+  ['article', content],
+  ['p', tags],
   ['hr', ''],
   ['div.grid',
-    ['p', (new Date(createdAt)).toLocaleString()],
+    ['p', (new Date(createdAt)).toLocaleString()
+      + (updatedAt ? ' | ' + (new Date(updatedAt)).toLocaleString() : '')],
     [`button.secondary#${editbuttonid}`, 'Edit'],
     [`button.contrast#${deletebuttonid}`, 'Delete']
   ]
 ]
 
-const editEntry = ({ text, _rev }, { textinputid, tagsinputid, saveid, cancelid }) => [
+const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, saveid, cancelid }) => [
   'form',
   [
     'fieldset',
     ['label',
       _rev ? 'Edit Entry' : 'Log Entry',
-      [`textarea#${textinputid}`, { placeholder: 'What happened?' }, text],
+      [`textarea#${textinputid}`, { placeholder: 'What happened?' }, content],
       ['small', 'Use Markdown!']
     ],
     ['label',
       'Tags',
-      [`input#${tagsinputid}`, { type: 'text' }],
+      [`input#${tagsinputid}`, { type: 'text', value: tags }],
       ['small', 'Comma-separated!']
     ],
     [
@@ -175,8 +184,7 @@ const editEntry = ({ text, _rev }, { textinputid, tagsinputid, saveid, cancelid 
 
 // VIEWS -- THE PRISMS
 
-function mainview (node, vat, mycaps) {
-  console.log(mycaps)
+async function mainview (node, vat, mycaps) {
   const textinputid = uuid()
   const tagsinputid = uuid()
   const saveid = uuid()
@@ -187,17 +195,21 @@ function mainview (node, vat, mycaps) {
       ['h1', 'A Guestbook for Goblins'],
       ['p', 'Scrawl your gibberish and share it by link.']
     ],
-    editEntry({ text: '' }, { textinputid, tagsinputid, saveid, cancelid }),
-    ['hr'],
-    ['div#entries']
+    editEntry({ content: '', tags: '' }, { textinputid, tagsinputid, saveid, cancelid }),
+    ['hr']
   ]))
   listento(saveid, 'click', async (e) => {
     e.preventDefault()
     const content = snag(textinputid).value
     const tags = snag(tagsinputid).value
-    // await vat.doPromise(() => mycaps.addToGuestbook.send(content, tags))
-    console.log(await vat.doPromise(() => mycaps.addToGuestbook.send(content, tags)))
+    await vat.doPromise(() => mycaps.addToGuestbook.send(content, tags))
   })
+  const docs = await vat.doPromise(() => mycaps.readGuestbook.send())
+  node.appendChild(alchemize(docs.map((doc) => {
+    const editbuttonid = uuid()
+    const deletebuttonid = uuid()
+    return showEntry(doc, { editbuttonid, deletebuttonid })
+  })))
 }
 
 // COMPONENTS -- MECHANISTIC INCANTATIONS
@@ -216,13 +228,6 @@ class PlaygroundApp extends HTMLElement {
       readGuestbookArchive: await vat.do(() => goblins.spawn(readGuestbookArchive, localdb)),
       readGuestbookArchiveTags: await vat.do(() => goblins.spawn(readGuestbookArchiveTags, localdb))
     }
-    
-    // const alice = await vat.do(() => goblins.spawn(greeter, 'Alice', 0))
-    // async function onclick () {
-    //   const message = await vat.doPromise(() => alice.send('Bob'))
-    //   snag('greeter').innerText = message
-    // }
-    // const message = await vat.doPromise(() => alice.send('Bob'))
     await ready
     mainview(this, vat, mycaps)
   }
