@@ -212,7 +212,8 @@ async function composeEntry (node, vat, { addToGuestbook }) {
   const initialdoc = { content: '', tags: [] }
   const composeoptions = { textinputid, tagsinputid, onsaveid }
   node.replaceChildren(alchemize(editEntry(initialdoc, composeoptions)))
-  listento(onsaveid, 'click', async () => {
+  listento(onsaveid, 'input', async (e) => {
+    e.preventDefault()
     const content = snag(textinputid).value
     const tags = snag(tagsinputid).value.split(',').map(s => s.trim())
     await vat.doPromise(() => addToGuestbook.send(content, tags))
