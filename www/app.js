@@ -224,7 +224,7 @@ async function composeEntry (node, vat, { addToGuestbook }) {
 
 async function listEntries (node, vat, docs, { editGuestbook, removeFromGuestbook }) {
   for (const doc of docs) {
-    const entryid = `guestbook-entry:${doc._id}`
+    const entryid = doc._id
     const textinputid = uuid()
     const tagsinputid = uuid()
     const onsaveid = uuid()
