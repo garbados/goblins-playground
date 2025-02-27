@@ -14,8 +14,8 @@
  * running entirely in the browser.
  */
 
-import { alchemize, snag, listento } from 'https://cdn.jsdelivr.net/npm/html-alchemist'
-import { v4 as uuid } from 'https://cdn.jsdelivr.net/npm/uuid@11.1.0/dist/esm-browser/index.js'
+import { alchemize, snag, listento } from 'https://cdn.jsdelivr.net/npm/html-alchemist/index.min.js'
+import { default as uuid } from 'https://cdn.jsdelivr.net/npm/uuid@11.1.0/dist/esm-browser/v4.min.js'
 
 // DATABASE PREAMBLE
 
@@ -147,20 +147,20 @@ const readGuestbookArchiveTags = (become, db) =>
 
 // TEMPLATES -- THE GARMENTS
 
-const showEntry = ({ content, tags, createdAt, updatedAt }, { editbuttonid, deletebuttonid }) => [
+const showEntry = ({ content, tags, createdAt, updatedAt }, { onedit, ondelete }) => [
   'section',
   ['article', content],
-  ['p', tags],
+  // ['p', tags.join(', ')],
   ['hr', ''],
   ['div.grid',
     ['p', (new Date(createdAt)).toLocaleString()
       + (updatedAt ? ' | ' + (new Date(updatedAt)).toLocaleString() : '')],
-    [`button.secondary#${editbuttonid}`, 'Edit'],
-    [`button.contrast#${deletebuttonid}`, 'Delete']
+    [`button.secondary`, { onclick: onedit }, 'Edit'],
+    [`button.contrast`, { onclick: ondelete }, 'Delete']
   ]
 ]
 
-const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, saveid, cancelid }) => [
+const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, onsave, oncancel }) => [
   'form',
   [
     'fieldset',
@@ -171,13 +171,13 @@ const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, sa
     ],
     ['label',
       'Tags',
-      [`input#${tagsinputid}`, { type: 'text', value: tags }],
+      [`input#${tagsinputid}`, { type: 'text', value: tags.join(', ') }],
       ['small', 'Comma-separated!']
     ],
     [
       'div.grid',
-      [`button#${saveid}`, 'Save'],
-      _rev ? [`button.outline.secondary#${cancelid}`, 'Cancel'] : ''
+      ['button', { onclick: onsave }, 'Save'],
+      _rev ? ['button.outline.secondary', { onclick: oncancel }, 'Cancel'] : ''
     ]
   ]
 ]
@@ -187,23 +187,21 @@ const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, sa
 async function mainview (node, vat, mycaps) {
   const textinputid = uuid()
   const tagsinputid = uuid()
-  const saveid = uuid()
-  const cancelid = uuid()
+  const onsave = async (textinputid, tagsinputid, e) => {
+    e.preventDefault()
+    const content = snag(textinputid).value
+    const tags = snag(tagsinputid).value.split(',').map(s => s.trim())
+    await vat.doPromise(() => mycaps.addToGuestbook.send(content, tags))
+  }
   node.appendChild(alchemize([
     [
       'hgroup',
       ['h1', 'A Guestbook for Goblins'],
       ['p', 'Scrawl your gibberish and share it by link.']
     ],
-    editEntry({ content: '', tags: '' }, { textinputid, tagsinputid, saveid, cancelid }),
+    editEntry({ content: '', tags: [] }, { textinputid, tagsinputid, onsave: onsave.bind(null, textinputid, tagsinputid) }),
     ['hr']
   ]))
-  listento(saveid, 'click', async (e) => {
-    e.preventDefault()
-    const content = snag(textinputid).value
-    const tags = snag(tagsinputid).value
-    await vat.doPromise(() => mycaps.addToGuestbook.send(content, tags))
-  })
   const docs = await vat.doPromise(() => mycaps.readGuestbook.send())
   node.appendChild(alchemize(docs.map((doc) => {
     const editbuttonid = uuid()
