@@ -14,8 +14,10 @@
  * running entirely in the browser.
  */
 
-import { alchemize, snag, listento } from 'https://cdn.jsdelivr.net/npm/html-alchemist/index.min.js'
+import { alchemize, profane, snag, listento } from 'https://cdn.jsdelivr.net/npm/html-alchemist/index.min.js'
 import { default as uuid } from 'https://cdn.jsdelivr.net/npm/uuid@11.1.0/dist/esm-browser/v4.min.js'
+import { default as purify } from 'https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.es.min.mjs'
+import { marked } from 'https://cdn.jsdelivr.net/npm/marked@15.0.7/lib/marked.esm.min.js'
 
 // DATABASE PREAMBLE
 
@@ -129,6 +131,10 @@ const editGuestbook = (become, db) =>
   (id, content, tags) =>
     become(editGuestbook(become, db), updateEntry(db, id, content, tags))
 
+const removeFromGuestbook = (become, db) =>
+  (id) =>
+    become(removeFromGuestbook(become, db), removeEntry(db, id))
+
 const readGuestbook = (become, db) =>
   (options = {}) =>
     become(readGuestbook(become, db), getDocsByTime(db, options))
@@ -147,27 +153,42 @@ const readGuestbookArchiveTags = (become, db) =>
 
 // TEMPLATES -- THE GARMENTS
 
-const showEntry = ({ content, tags, createdAt, updatedAt }, { onedit, ondelete }) => [
+const showEntry = ({ content, tags, createdAt, updatedAt }, { oneditid, ondeleteid }) => [
   'section',
-  ['article', content],
-  // ['p', tags.join(', ')],
-  ['hr', ''],
-  ['div.grid',
-    ['p', (new Date(createdAt)).toLocaleString()
-      + (updatedAt ? ' | ' + (new Date(updatedAt)).toLocaleString() : '')],
-    [`button.secondary`, { onclick: onedit }, 'Edit'],
-    [`button.contrast`, { onclick: ondelete }, 'Delete']
+  [
+    'article',
+    profane('p', purify.sanitize(marked(content))),
+    ['hr'],
+    [
+      'nav',
+      ['ul', ...tags.map(t => [
+        'li', ['a', `#${t}`]
+      ])]
+    ],
+    [
+      'nav',
+      [
+        'ul',
+        ['li', (new Date(createdAt)).toLocaleString()
+          + (updatedAt ? ' | ' + (new Date(updatedAt)).toLocaleString() : '')]
+      ],
+      [
+        'ul',
+        ['li', [`button.secondary#${oneditid}`, 'Edit']],
+        ['li', [`button.contrast#${ondeleteid}`, 'Delete']]
+      ]
+    ]
   ]
 ]
 
-const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, onsave, oncancel }) => [
+const editEntry = ({ content, tags, _rev }, { textinputid, tagsinputid, onsaveid, oncancelid }) => [
   'form',
   [
     'fieldset',
     ['label',
-      _rev ? 'Edit Entry' : 'Log Entry',
+      _rev ? 'Edit Entry' : 'Add Entry',
       [`textarea#${textinputid}`, { placeholder: 'What happened?' }, content],
-      ['small', 'Use Markdown!']
+      ['small', 'Use markdown!']
     ],
     ['label',
       'Tags',
@@ -176,38 +197,90 @@ const editEntry = ({ text: content, tags, _rev }, { textinputid, tagsinputid, on
     ],
     [
       'div.grid',
-      ['button', { onclick: onsave }, 'Save'],
-      _rev ? ['button.outline.secondary', { onclick: oncancel }, 'Cancel'] : ''
+      [`button#${onsaveid}`, 'Save'],
+      _rev ? [`button.outline.secondary#${oncancelid}`, 'Cancel'] : ''
     ]
   ]
 ]
 
 // VIEWS -- THE PRISMS
 
-async function mainview (node, vat, mycaps) {
+async function composeEntry (node, vat, { addToGuestbook }) {
   const textinputid = uuid()
   const tagsinputid = uuid()
-  const onsave = async (textinputid, tagsinputid, e) => {
-    e.preventDefault()
+  const onsaveid = uuid()
+  const initialdoc = { content: '', tags: [] }
+  const composeoptions = { textinputid, tagsinputid, onsaveid }
+  node.replaceChildren(alchemize(editEntry(initialdoc, composeoptions)))
+  listento(onsaveid, 'click', async () => {
     const content = snag(textinputid).value
     const tags = snag(tagsinputid).value.split(',').map(s => s.trim())
-    await vat.doPromise(() => mycaps.addToGuestbook.send(content, tags))
+    await vat.doPromise(() => addToGuestbook.send(content, tags))
+    snag(textinputid).value = ''
+    snag(tagsinputid).value = ''
+  })
+}
+
+async function listEntries (node, vat, docs, { editGuestbook, removeFromGuestbook }) {
+  for (const doc of docs) {
+    const entryid = `guestbook-entry:${doc._id}`
+    const textinputid = uuid()
+    const tagsinputid = uuid()
+    const onsaveid = uuid()
+    const oncancelid = uuid()
+    const oneditid = uuid()
+    const ondeleteid = uuid()
+    function refreshShow (e) {
+      if (e) e.preventDefault()
+      snag(entryid).replaceChildren(alchemize(
+        showEntry(doc, { oneditid, ondeleteid })
+      ))
+      if (editGuestbook)
+        listento(oneditid, 'click', refreshEdit)
+      if (removeFromGuestbook)
+        listento(ondeleteid, 'click', async (e) => {
+          if (e) e.preventDefault()
+          if (confirm("Are you sure you want to delete this entry?")) {
+            await vat.doPromise(() => removeFromGuestbook.send(doc._id))
+            snag(entryid).innerHTML = ''
+          }
+        })
+    }
+    function refreshEdit (e) {
+      if (e) e.preventDefault()
+      snag(entryid).replaceChildren(alchemize(
+        editEntry(doc, { textinputid, tagsinputid, onsaveid, oncancelid })
+      ))
+      listento(onsaveid, 'click', async (e) => {
+        e.preventDefault()
+        const content = snag(textinputid).value
+        const tags = snag(tagsinputid).value.split(',').map(s => s.trim())
+        await vat.doPromise(() => editGuestbook.send(doc._id, content, tags))
+        doc.content = content
+        doc.tags = tags
+        refreshShow()
+      })
+      listento(oncancelid, 'click', refreshShow)
+    }
+    node.appendChild(alchemize([`div#${entryid}`]))
+    refreshShow()
   }
+}
+
+async function mainview (node, vat, mycaps) {
   node.appendChild(alchemize([
     [
       'hgroup',
       ['h1', 'A Guestbook for Goblins'],
       ['p', 'Scrawl your gibberish and share it by link.']
     ],
-    editEntry({ content: '', tags: [] }, { textinputid, tagsinputid, onsave: onsave.bind(null, textinputid, tagsinputid) }),
-    ['hr']
+    ['div#compose'],
+    ['hr'],
+    ['div#entries']
   ]))
+  composeEntry(snag('compose'), vat, mycaps)
   const docs = await vat.doPromise(() => mycaps.readGuestbook.send())
-  node.appendChild(alchemize(docs.map((doc) => {
-    const editbuttonid = uuid()
-    const deletebuttonid = uuid()
-    return showEntry(doc, { editbuttonid, deletebuttonid })
-  })))
+  listEntries(snag('entries'), vat, docs, mycaps)
 }
 
 // COMPONENTS -- MECHANISTIC INCANTATIONS
@@ -221,6 +294,7 @@ class PlaygroundApp extends HTMLElement {
     const mycaps = {
       addToGuestbook: await vat.do(() => goblins.spawn(addToGuestbook, localdb)),
       editGuestbook: await vat.do(() => goblins.spawn(editGuestbook, localdb)),
+      removeFromGuestbook: await vat.do(() => goblins.spawn(removeFromGuestbook, localdb)),
       readGuestbook: await vat.do(() => goblins.spawn(readGuestbook, localdb)),
       readGuestbookTags: await vat.do(() => goblins.spawn(readGuestbookTags, localdb)),
       readGuestbookArchive: await vat.do(() => goblins.spawn(readGuestbookArchive, localdb)),
