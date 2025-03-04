@@ -1,12 +1,12 @@
-/* globals Goblins, PouchDB, emit */
+/* globals Goblins, PouchDB, emit, confirm, HTMLElement, customElements */
 
 /**
  * The Guestbook
- * 
+ *
  * A social blogging app where users can exchange
  * blog feeds as sturdy-refs.
  * A neutral relay is used to exchange streams.
- * 
+ *
  * The intent is to demonstrate
  * Alchemist, PouchDB, and Goblins
  * in orchestration, facilitating
@@ -15,8 +15,8 @@
  */
 
 import { alchemize, profane, snag, listento } from 'https://cdn.jsdelivr.net/npm/html-alchemist/index.min.js'
-import { default as uuid } from 'https://cdn.jsdelivr.net/npm/uuid@11.1.0/dist/esm-browser/v4.min.js'
-import { default as purify } from 'https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.es.min.mjs'
+import { default as uuid } from 'https://cdn.jsdelivr.net/npm/uuid@11.1.0/dist/esm-browser/v4.min.js' // eslint-disable-line import/no-named-default
+import { default as purify } from 'https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.es.min.mjs' // eslint-disable-line import/no-named-default
 import { marked } from 'https://cdn.jsdelivr.net/npm/marked@15.0.7/lib/marked.esm.min.js'
 
 // DATABASE PREAMBLE
@@ -29,16 +29,12 @@ const DDOC = {
         if (doc.type === 'guestbook-entry') {
           const rawDate = new Date(doc.createdAt)
           const rawDatetime = rawDate.toISOString()
-          dateparts = rawDatetime.split('T')
-          date = dateparts[0].split('-')
+          const dateparts = rawDatetime.split('T')
+          const date = dateparts[0].split('-')
           const rawTime = dateparts[1].split(':')
-          year = date[0]
-          month = date[1]
-          day = date[2]
-          hour = rawTime[0]
-          minute = rawTime[1]
-          second = rawTime[2].split('.').slice(0, -1)
-          second = second[0]
+          const hour = rawTime[0]
+          const minute = rawTime[1]
+          const second = rawTime[2].split('.').slice(0, -1)[0]
           const time = [hour, minute, second]
           const datetime = date.concat(time)
           emit(datetime)
@@ -114,6 +110,9 @@ const groupDocsByTime = async (db, options = {}) =>
 const groupDocsByTags = async (db, options = {}) =>
   db.query('guestbook/tags', { group: true, group_level: 1, ...options })
 
+const formatTags = (tags) =>
+  tags.split(',').filter(s => s.length).map(s => s.trim())
+
 // VAT OBJECTS -- THE RIGHTS
 
 // 0. fn = (bcom, ...options) => (...args) => bcom(fn(bcom, ...options), result)
@@ -123,8 +122,8 @@ const groupDocsByTags = async (db, options = {}) =>
 // 2a. this returns the result of calling fn(...args)
 // 2b. the vats do not need to be the same. use sturdyrefs to cross machines.
 
-const addToGuestbook = (become, db) => 
-  (content, tags) => 
+const addToGuestbook = (become, db) =>
+  (content, tags) =>
     become(addToGuestbook(become, db), saveEntry(db, content, tags))
 
 const editGuestbook = (become, db) =>
@@ -151,6 +150,15 @@ const readGuestbookArchiveTags = (become, db) =>
   (options = {}) =>
     become(readGuestbookArchiveTags(become, db), groupDocsByTags(db, options))
 
+const followChanges = (become, db) =>
+  (options = {}, listener) =>
+    become(followChanges(become, db), db.changes({
+      live: true,
+      since: 'now',
+      include_docs: true,
+      ...options
+    }).on('change', listener))
+
 // TEMPLATES -- THE GARMENTS
 
 const showEntry = ({ content, tags, createdAt, updatedAt }, { oneditid, ondeleteid }) => [
@@ -159,25 +167,47 @@ const showEntry = ({ content, tags, createdAt, updatedAt }, { oneditid, ondelete
     'article',
     profane('p', purify.sanitize(marked(content))),
     ['hr'],
-    [
-      'nav',
-      ['ul', ...tags.map(t => [
-        'li', ['a', `#${t}`]
-      ])]
-    ],
+    tags.length
+      ? [
+          'nav',
+          ['ul', ...tags.map(t => [
+            'li', ['a', `#${t}`]
+          ])]
+        ]
+      : '',
     [
       'nav',
       [
         'ul',
-        ['li', (new Date(createdAt)).toLocaleString()
-          + (updatedAt ? ' | ' + (new Date(updatedAt)).toLocaleString() : '')]
+        [
+          'li',
+          `Created at ${(new Date(createdAt)).toLocaleString()}`
+        ]
       ],
       [
         'ul',
-        ['li', [`button.secondary#${oneditid}`, 'Edit']],
-        ['li', [`button.contrast#${ondeleteid}`, 'Delete']]
+        (updatedAt
+          ? [
+              'li',
+              [
+                'em',
+            `Updated at ${(new Date(updatedAt)).toLocaleString()}`
+              ]
+            ]
+          : '')
       ]
-    ]
+    ],
+    (oneditid || ondeleteid)
+      ? [
+          'details',
+          ['summary.outline', { role: 'button' }, 'Actions...'],
+          [
+            'div.grid',
+            oneditid ? [`button.secondary#${oneditid}`, 'Edit'] : '',
+            ondeleteid ? [`button.contrast#${ondeleteid}`, 'Delete'] : ''
+          ]
+        ]
+      : ''
   ]
 ]
 
@@ -212,13 +242,15 @@ async function composeEntry (node, vat, { addToGuestbook }) {
   const initialdoc = { content: '', tags: [] }
   const composeoptions = { textinputid, tagsinputid, onsaveid }
   node.replaceChildren(alchemize(editEntry(initialdoc, composeoptions)))
-  listento(onsaveid, 'input', async (e) => {
+  listento(onsaveid, 'click', (e) => {
     e.preventDefault()
     const content = snag(textinputid).value
-    const tags = snag(tagsinputid).value.split(',').map(s => s.trim())
-    await vat.doPromise(() => addToGuestbook.send(content, tags))
-    snag(textinputid).value = ''
-    snag(tagsinputid).value = ''
+    const tags = formatTags(snag(tagsinputid).value)
+    vat.doPromise(() => addToGuestbook.send(content, tags))
+      .then(() => {
+        snag(textinputid).value = ''
+        snag(tagsinputid).value = ''
+      })
   })
 }
 
@@ -229,23 +261,23 @@ async function listEntries (node, vat, docs, { editGuestbook, removeFromGuestboo
     const tagsinputid = uuid()
     const onsaveid = uuid()
     const oncancelid = uuid()
-    const oneditid = uuid()
-    const ondeleteid = uuid()
+    const oneditid = editGuestbook && uuid()
+    const ondeleteid = removeFromGuestbook && uuid()
     function refreshShow (e) {
       if (e) e.preventDefault()
       snag(entryid).replaceChildren(alchemize(
         showEntry(doc, { oneditid, ondeleteid })
       ))
-      if (editGuestbook)
-        listento(oneditid, 'click', refreshEdit)
-      if (removeFromGuestbook)
+      if (editGuestbook) { listento(oneditid, 'click', refreshEdit) }
+      if (removeFromGuestbook) {
         listento(ondeleteid, 'click', async (e) => {
           if (e) e.preventDefault()
-          if (confirm("Are you sure you want to delete this entry?")) {
+          if (confirm('Are you sure you want to delete this entry?')) {
             await vat.doPromise(() => removeFromGuestbook.send(doc._id))
             snag(entryid).innerHTML = ''
           }
         })
+      }
     }
     function refreshEdit (e) {
       if (e) e.preventDefault()
@@ -255,8 +287,9 @@ async function listEntries (node, vat, docs, { editGuestbook, removeFromGuestboo
       listento(onsaveid, 'click', async (e) => {
         e.preventDefault()
         const content = snag(textinputid).value
-        const tags = snag(tagsinputid).value.split(',').map(s => s.trim())
+        const tags = formatTags(snag(tagsinputid).value)
         await vat.doPromise(() => editGuestbook.send(doc._id, content, tags))
+        console.log(tags)
         doc.content = content
         doc.tags = tags
         refreshShow()
@@ -280,8 +313,15 @@ async function mainview (node, vat, mycaps) {
     ['div#entries']
   ]))
   composeEntry(snag('compose'), vat, mycaps)
-  const docs = await vat.doPromise(() => mycaps.readGuestbook.send())
-  listEntries(snag('entries'), vat, docs, mycaps)
+  const refreshDocs = async () => {
+    const docs = await vat.doPromise(() => mycaps.readGuestbook.send())
+    snag('entries').innerHTML = ''
+    listEntries(snag('entries'), vat, docs, mycaps)
+  }
+  await Promise.all([
+    vat.doPromise(() => mycaps.followChanges.send({}, refreshDocs)),
+    refreshDocs()
+  ])
 }
 
 // COMPONENTS -- MECHANISTIC INCANTATIONS
@@ -299,7 +339,8 @@ class PlaygroundApp extends HTMLElement {
       readGuestbook: await vat.do(() => goblins.spawn(readGuestbook, localdb)),
       readGuestbookTags: await vat.do(() => goblins.spawn(readGuestbookTags, localdb)),
       readGuestbookArchive: await vat.do(() => goblins.spawn(readGuestbookArchive, localdb)),
-      readGuestbookArchiveTags: await vat.do(() => goblins.spawn(readGuestbookArchiveTags, localdb))
+      readGuestbookArchiveTags: await vat.do(() => goblins.spawn(readGuestbookArchiveTags, localdb)),
+      followChanges: await vat.do(() => goblins.spawn(followChanges, localdb))
     }
     await ready
     mainview(this, vat, mycaps)
