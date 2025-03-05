@@ -37,17 +37,9 @@
                       #:recursive? #t
                       #:select? keep-file?))
   (build-system gnu-build-system)
-  (arguments
-   `(#:phases
-     (modify-phases %standard-phases
-       (replace 'bootstrap
-         (lambda _
-           (invoke "autoreconf" "-vif"))))
-     #:make-flags
-     ,#~(list "GUILE_AUTO_COMPILE=0")))
   (native-inputs
    (list autoconf automake pkg-config texinfo))
-  (inputs (list guile-3.0))
+  (inputs (list guile-next))
   (propagated-inputs
    (list guile-goblins guile-hoot))
   (synopsis "A horrible goblin has stolen your keyboard! This is the result.")
