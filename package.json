@@ -9,6 +9,7 @@
   "scripts": {
     "start": "serve www",
     "preinstall": "git submodule init && git submodule update",
+    "prelay": "guix shell -D -f guix.scm -- guile guile-goblins/examples/prelay-server.scm new-relay websocket 127.0.0.1 3030",
     "guild": "guix shell -D -f guix.scm -- bash -c 'guild compile-wasm  -L ./guile-goblins -L $GUIX_ENVIRONMENT/share/guile/3.0/ -o www/goblins.wasm guile/goblins.scm'"
   },
   "devDependencies": {
