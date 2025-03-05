@@ -1,0 +1,3 @@
+[submodule "guile-goblins"]
+	path = guile-goblins
+	url = https://gitlab.com/spritely/guile-goblins.git

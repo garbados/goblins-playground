@@ -1,13 +1,3 @@
-;; This file is waived into the public domain, as-is, no warranty provided.
-;;
-;; If the public domain doesn't exist where you live, consider
-;; this a license which waives all copyright and neighboring intellectual
-;; restrictions laws mechanisms, to the fullest extent possible by law,
-;; as-is, no warranty provided.
-;;
-;; No attribution is required and you are free to copy-paste and munge
-;; into your own project.
-
 (use-modules
   (guix gexp)
   (guix packages)
@@ -25,6 +15,23 @@
   (gnu packages tls)
   (srfi srfi-1))
 
+(define guile-hoot*
+  (let ((commit "db4f8f15c39535b89716e5e9c4a10abb63e51969"))
+    (package
+     (inherit guile-hoot)
+     (version (string-append (package-version guile-hoot)
+                             "-1." (string-take commit 7)))
+     (source (origin
+              (method git-fetch)
+              (uri (git-reference
+                    (url "https://gitlab.com/spritely/guile-hoot.git")
+                    (commit commit)))
+              (sha256
+               (base32
+                "16h7rjq1allg7ym6nxan5a6clq7x12ibb2z6bcln551gl5afzxvz"))))
+     (arguments
+      '(#:tests? #f)))))
+
 (define (keep-file? file stat)
   (not (any (lambda (my-string)
               (string-contains file my-string))
@@ -41,7 +48,7 @@
    (list autoconf automake pkg-config texinfo))
   (inputs (list guile-next))
   (propagated-inputs
-   (list guile-goblins guile-hoot))
+   (list guile-goblins guile-hoot*))
   (synopsis "A horrible goblin has stolen your keyboard! This is the result.")
   (description
    "[wretched goblin noises. disgusting and disreputable. you envy its abandon.]")
