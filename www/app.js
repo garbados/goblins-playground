@@ -18,6 +18,7 @@ import { alchemize, profane, snag, listento } from 'https://cdn.jsdelivr.net/npm
 import { default as uuid } from 'https://cdn.jsdelivr.net/npm/uuid@11.1.0/dist/esm-browser/v4.min.js' // eslint-disable-line import/no-named-default
 import { default as purify } from 'https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.es.min.mjs' // eslint-disable-line import/no-named-default
 import { marked } from 'https://cdn.jsdelivr.net/npm/marked@15.0.7/lib/marked.esm.min.js'
+// IMPORTED ELSEWHERE: PouchDB
 
 // DATABASE PREAMBLE
 
@@ -68,6 +69,7 @@ async function forcePut (db, doc) {
 }
 
 async function forceRemove (db, doc) {
+  if (typeof doc === 'string') doc = { _id: doc }
   try {
     return await db.remove(doc)
   } catch (e) {
@@ -240,8 +242,7 @@ async function composeEntry (node, vat, { addToGuestbook }) {
   const tagsinputid = uuid()
   const onsaveid = uuid()
   const initialdoc = { content: '', tags: [] }
-  const composeoptions = { textinputid, tagsinputid, onsaveid }
-  node.replaceChildren(alchemize(editEntry(initialdoc, composeoptions)))
+  node.replaceChildren(alchemize(editEntry(initialdoc, { textinputid, tagsinputid, onsaveid })))
   listento(onsaveid, 'click', (e) => {
     e.preventDefault()
     const content = snag(textinputid).value
